@@ -9,7 +9,9 @@ import android.content.ContentValues
 import org.signal.archive.proto.Group
 import org.signal.core.models.ServiceId
 import org.signal.core.util.Base64
+import org.signal.core.util.logging.Log
 import org.signal.core.util.toInt
+import org.thoughtcrime.securesms.backup.v2.ImportSkips
 import org.signal.libsignal.zkgroup.groups.GroupMasterKey
 import org.signal.libsignal.zkgroup.groups.GroupSecretParams
 import org.signal.storageservice.storage.protos.groups.AccessControl
@@ -40,6 +42,8 @@ import org.whispersystems.signalservice.api.groupsv2.GroupsV2Operations
  * Handles the importing of [ArchiveGroup] models into the local database.
  */
 object GroupArchiveImporter {
+  private val TAG = Log.tag(GroupArchiveImporter::class.java)
+
   fun import(group: ArchiveGroup): RecipientId {
     val masterKey = GroupMasterKey(group.masterKey.toByteArray())
     val groupId = GroupId.v2(masterKey)
@@ -52,22 +56,46 @@ object GroupArchiveImporter {
       snapshot.toLocal(operations)
     }
 
-    val values = ContentValues().apply {
-      put(RecipientTable.GROUP_ID, groupId.toString())
-      put(RecipientTable.AVATAR_COLOR, AvatarColorHash.forGroupId(groupId).serialize())
-      put(RecipientTable.PROFILE_SHARING, group.whitelisted.toInt())
-      put(RecipientTable.BLOCKED, group.blocked.toInt())
-      put(RecipientTable.BLOCKED_AT, group.blockedAtTimestamp)
-      put(RecipientTable.TYPE, RecipientTable.RecipientType.GV2.id)
-      put(RecipientTable.STORAGE_SERVICE_ID, Base64.encodeWithPadding(StorageSyncHelper.generateKey()))
-      put(RecipientTable.AVATAR_COLOR, group.avatarColor?.toLocal()?.serialize())
-      if (group.hideStory) {
-        val extras = RecipientExtras.Builder().hideStory(true).build()
-        put(RecipientTable.EXTRAS, extras.encode())
+    var attempts = 0
+    var recipientId: Long = -1
+    var lastStorageKey: String? = null
+    while (attempts < 5) {
+      val values = ContentValues().apply {
+        put(RecipientTable.GROUP_ID, groupId.toString())
+        put(RecipientTable.AVATAR_COLOR, AvatarColorHash.forGroupId(groupId).serialize())
+        put(RecipientTable.PROFILE_SHARING, group.whitelisted.toInt())
+        put(RecipientTable.BLOCKED, group.blocked.toInt())
+        put(RecipientTable.BLOCKED_AT, group.blockedAtTimestamp)
+        put(RecipientTable.TYPE, RecipientTable.RecipientType.GV2.id)
+        val storageKey = Base64.encodeWithPadding(StorageSyncHelper.generateKey())
+        lastStorageKey = storageKey
+        put(RecipientTable.STORAGE_SERVICE_ID, storageKey)
+        put(RecipientTable.AVATAR_COLOR, group.avatarColor?.toLocal()?.serialize())
+        if (group.hideStory) {
+          val extras = RecipientExtras.Builder().hideStory(true).build()
+          put(RecipientTable.EXTRAS, extras.encode())
+        }
+      }
+
+      recipientId = SignalDatabase.writableDatabase.insert(RecipientTable.TABLE_NAME, null, values)
+      if (recipientId != -1L) {
+        break
+      }
+
+      // Robust: insert returned -1 indicates UNIQUE constraint (most likely storage_service_id)
+      // No string parsing - retry with new key up to 5 times, then skip (1A + 3A)
+      Log.w(TAG, ImportSkips.duplicateStorageId(lastStorageKey ?: "unknown") + " attempt ${attempts + 1}/5 for group $groupId")
+      attempts++
+      if (attempts >= 5) {
+        break
       }
     }
 
-    val recipientId = SignalDatabase.writableDatabase.insert(RecipientTable.TABLE_NAME, null, values)
+    if (recipientId == -1L) {
+      Log.w(TAG, "Failed to import group $groupId after $attempts attempts due to constraints. Skipping.")
+      return RecipientId.UNKNOWN
+    }
+
     val restoredId = SignalDatabase.groups.create(masterKey, decryptedState, groupSendEndorsements = null)
     if (restoredId != null) {
       SignalDatabase.groups.setShowAsStoryState(restoredId, group.storySendMode.toLocal())
