@@ -95,6 +95,7 @@ import org.thoughtcrime.securesms.recipients.RecipientId
 import org.thoughtcrime.securesms.recipients.RecipientUtil
 import org.thoughtcrime.securesms.service.webrtc.links.CallLinkRoomId
 import org.thoughtcrime.securesms.storage.StorageRecordUpdate
+import org.thoughtcrime.securesms.backup.v2.ImportSkips
 import org.thoughtcrime.securesms.storage.StorageSyncHelper
 import org.thoughtcrime.securesms.storage.StorageSyncModels
 import org.thoughtcrime.securesms.util.IdentityUtil
@@ -4322,17 +4323,30 @@ open class RecipientTable(context: Context, databaseHelper: SignalDatabase) : Da
     if (existing.isPresent) {
       return GetOrInsertResult(existing.get(), false)
     } else {
-      val id = writableDatabase.insert(TABLE_NAME, null, contentValues)
-      if (id < 0) {
+      var attempts = 0
+      var mutableValues = contentValues
+      while (attempts < 5) {
+        val id = writableDatabase.insert(TABLE_NAME, null, mutableValues)
+        if (id >= 0) {
+          return GetOrInsertResult(RecipientId.from(id), true)
+        }
+
         existing = getByColumn(column, value)
         if (existing.isPresent) {
           return GetOrInsertResult(existing.get(), false)
+        }
+
+        if (mutableValues.containsKey(STORAGE_SERVICE_ID)) {
+          val newKey = Base64.encodeWithPadding(StorageSyncHelper.generateKey())
+          mutableValues.put(STORAGE_SERVICE_ID, newKey)
+          Log.w(TAG, ImportSkips.duplicateStorageId(newKey) + " attempt ${attempts + 1}/5 for $column=$value")
+          attempts++
+          continue
         } else {
           throw AssertionError("Failed to insert recipient!")
         }
-      } else {
-        return GetOrInsertResult(RecipientId.from(id), true)
       }
+      throw AssertionError("Failed to insert recipient after $attempts retries due to storage_service_id collisions!")
     }
   }
 
