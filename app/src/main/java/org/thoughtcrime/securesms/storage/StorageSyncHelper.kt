@@ -100,9 +100,30 @@ object StorageSyncHelper {
     return IdDifferenceResult(remoteOnlyKeys, localOnlyKeys, hasTypeMismatch)
   }
 
+  /**
+   * Raw random key, no uniqueness guarantee. For DB inserts into [RecipientTable.STORAGE_SERVICE_ID],
+   * use [generateUniqueStorageId] instead to avoid UNIQUE 2067 (see PR 14973).
+   */
   @JvmStatic
   fun generateKey(): ByteArray {
     return keyGenerator.generate()
+  }
+
+  /**
+   * Generates a storage key that does not already exist in the recipient table.
+   * Use this instead of [generateKey] directly when inserting [RecipientTable.STORAGE_SERVICE_ID].
+   * Future writers must use this helper to avoid UNIQUE 2067 collisions (see PR 14973).
+   * Still requires caller to handle `insert() == -1` race - see [RecipientTable.getOrInsertByColumn].
+   */
+  @JvmStatic
+  fun generateUniqueStorageId(): ByteArray {
+    repeat(5) {
+      val key = generateKey()
+      if (SignalDatabase.recipients.getByStorageId(key) == null) return key
+      val encoded = encodeWithPadding(key)
+      Log.w(TAG, org.thoughtcrime.securesms.backup.v2.ImportSkips.duplicateStorageId(encoded) + " pre-check exists, retry ${it + 1}/5")
+    }
+    return generateKey()
   }
 
   @JvmStatic

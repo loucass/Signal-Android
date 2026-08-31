@@ -67,7 +67,7 @@ object GroupArchiveImporter {
         put(RecipientTable.BLOCKED, group.blocked.toInt())
         put(RecipientTable.BLOCKED_AT, group.blockedAtTimestamp)
         put(RecipientTable.TYPE, RecipientTable.RecipientType.GV2.id)
-        val storageKey = Base64.encodeWithPadding(StorageSyncHelper.generateKey())
+        val storageKey = Base64.encodeWithPadding(StorageSyncHelper.generateUniqueStorageId())
         lastStorageKey = storageKey
         put(RecipientTable.STORAGE_SERVICE_ID, storageKey)
         put(RecipientTable.AVATAR_COLOR, group.avatarColor?.toLocal()?.serialize())
@@ -82,8 +82,13 @@ object GroupArchiveImporter {
         break
       }
 
-      // Robust: insert returned -1 indicates UNIQUE constraint (most likely storage_service_id)
-      // No string parsing - retry with new key up to 5 times, then skip (1A + 3A)
+      // Distinguish storage collision vs other constraint via SELECT (no string parsing)
+      val lastKeyBytes = try { lastStorageKey?.let { Base64.decode(it) } } catch (e: Exception) { null }
+      val storageExists = lastKeyBytes != null && SignalDatabase.recipients.getByStorageId(lastKeyBytes) != null
+      if (!storageExists) {
+        Log.w(TAG, "Insert failed for group $groupId, storage ${lastStorageKey ?: "unknown"} not found - not a storage collision, skipping")
+        break
+      }
       Log.w(TAG, ImportSkips.duplicateStorageId(lastStorageKey ?: "unknown") + " attempt ${attempts + 1}/5 for group $groupId")
       attempts++
       if (attempts >= 5) {

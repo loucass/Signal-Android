@@ -4337,9 +4337,17 @@ open class RecipientTable(context: Context, databaseHelper: SignalDatabase) : Da
         }
 
         if (mutableValues.containsKey(STORAGE_SERVICE_ID)) {
-          val newKey = Base64.encodeWithPadding(StorageSyncHelper.generateKey())
-          mutableValues.put(STORAGE_SERVICE_ID, newKey)
-          Log.w(TAG, ImportSkips.duplicateStorageId(newKey) + " attempt ${attempts + 1}/5 for $column=$value")
+          val lastKeyStr = mutableValues.getAsString(STORAGE_SERVICE_ID)
+          val lastKeyBytes = try { Base64.decode(lastKeyStr) } catch (e: Exception) { null }
+          val storageExists = lastKeyBytes != null && getByStorageId(lastKeyBytes) != null
+          if (!storageExists) {
+            Log.w(TAG, "Insert failed for $column=$value, storage $lastKeyStr not found - not a storage collision. Failing fast.")
+            throw AssertionError("Failed to insert recipient! insert returned -1 and storage not found for $column")
+          }
+          val newKey = StorageSyncHelper.generateUniqueStorageId()
+          val newKeyStr = Base64.encodeWithPadding(newKey)
+          mutableValues.put(STORAGE_SERVICE_ID, newKeyStr)
+          Log.w(TAG, ImportSkips.duplicateStorageId(lastKeyStr) + " attempt ${attempts + 1}/5 for $column=$value -> retry with $newKeyStr")
           attempts++
           continue
         } else {
