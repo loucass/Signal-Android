@@ -47,6 +47,10 @@ class GroupArchiveExporter(private val selfAci: ServiceId.ACI, private val curso
     return cursor.count > 0 && !cursor.isLast
   }
 
+  /**
+   * Returns the next [ArchiveRecipient], or `null` if the group's master key is invalid
+   * (null or wrong length) and should be skipped.
+   */
   override fun next(): ArchiveRecipient? {
     if (!cursor.moveToNext()) {
       throw NoSuchElementException()
