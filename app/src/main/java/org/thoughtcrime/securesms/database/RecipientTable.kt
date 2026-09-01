@@ -1134,9 +1134,30 @@ open class RecipientTable(context: Context, databaseHelper: SignalDatabase) : Da
         .run()
     }
 
-    val updateCount = writableDatabase.update(TABLE_NAME, values, "$STORAGE_SERVICE_ID = ?", arrayOf(Base64.encodeWithPadding(update.old.id.raw)))
-    if (updateCount < 1) {
-      throw AssertionError("Account update didn't match any rows!")
+    val targetStorageIdStr = Base64.encodeWithPadding(update.new.id.raw)
+    val oldStorageIdStr = Base64.encodeWithPadding(update.old.id.raw)
+
+    writableDatabase.beginTransaction()
+    try {
+      // Resolve collision: if another recipient already has the target storage ID,
+      // give them a new unique ID before we claim it for ourselves.
+      val targetKeyBytes = try { Base64.decode(targetStorageIdStr) } catch (e: Exception) { null }
+      val conflictingRecord = targetKeyBytes?.let { getByStorageId(it) }
+      if (conflictingRecord != null && conflictingRecord.id != Recipient.self().id) {
+        val newKeyForConflicting = StorageSyncHelper.generateUniqueStorageId()
+        val newKeyForConflictingStr = Base64.encodeWithPadding(newKeyForConflicting)
+        writableDatabase.update(TABLE_NAME, contentValuesOf(STORAGE_SERVICE_ID to newKeyForConflictingStr), "$ID = ?", arrayOf(conflictingRecord.id.toLong()))
+        Log.w(TAG, "Resolved storage_service_id collision: recipient ${conflictingRecord.id} had $targetStorageIdStr, reassigned to $newKeyForConflictingStr")
+      }
+
+      val updateCount = writableDatabase.update(TABLE_NAME, values, "$STORAGE_SERVICE_ID = ?", arrayOf(oldStorageIdStr))
+      if (updateCount < 1) {
+        throw AssertionError("Account update didn't match any rows!")
+      }
+
+      writableDatabase.setTransactionSuccessful()
+    } finally {
+      writableDatabase.endTransaction()
     }
 
     if (remoteKey != localKey) {
@@ -4324,7 +4345,7 @@ open class RecipientTable(context: Context, databaseHelper: SignalDatabase) : Da
       return GetOrInsertResult(existing.get(), false)
     } else {
       var attempts = 0
-      var mutableValues = contentValues
+      var mutableValues = ContentValues(contentValues)
       while (attempts < 5) {
         val id = writableDatabase.insert(TABLE_NAME, null, mutableValues)
         if (id >= 0) {
