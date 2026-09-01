@@ -123,6 +123,7 @@ object StorageSyncHelper {
       val encoded = encodeWithPadding(key)
       Log.w(TAG, org.thoughtcrime.securesms.backup.v2.ImportSkips.duplicateStorageId(encoded) + " pre-check exists, retry ${it + 1}/5")
     }
+    Log.w(TAG, "generateUniqueStorageId: all 5 pre-check retries exhausted, returning unverified key. Caller must handle insert collision.")
     return generateKey()
   }
 

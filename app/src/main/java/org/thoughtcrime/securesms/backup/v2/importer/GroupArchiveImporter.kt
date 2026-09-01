@@ -62,7 +62,6 @@ object GroupArchiveImporter {
     while (attempts < 5) {
       val values = ContentValues().apply {
         put(RecipientTable.GROUP_ID, groupId.toString())
-        put(RecipientTable.AVATAR_COLOR, AvatarColorHash.forGroupId(groupId).serialize())
         put(RecipientTable.PROFILE_SHARING, group.whitelisted.toInt())
         put(RecipientTable.BLOCKED, group.blocked.toInt())
         put(RecipientTable.BLOCKED_AT, group.blockedAtTimestamp)
