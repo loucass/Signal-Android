@@ -9,7 +9,11 @@ import android.app.Application
 import assertk.assertThat
 import assertk.assertions.isEmpty
 import assertk.assertions.isNotEmpty
+import io.mockk.Runs
 import io.mockk.every
+import io.mockk.just
+import io.mockk.mockkObject
+import io.mockk.unmockkObject
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -36,7 +40,6 @@ import org.thoughtcrime.securesms.storage.StorageKeyGenerator
 import org.thoughtcrime.securesms.storage.StorageRecordUpdate
 import org.thoughtcrime.securesms.storage.StorageSyncHelper
 import org.thoughtcrime.securesms.testutil.RecipientTestRule
-import org.thoughtcrime.securesms.util.RemoteConfig
 import org.whispersystems.signalservice.api.storage.SignalAccountRecord
 import org.whispersystems.signalservice.api.storage.StorageId
 import org.whispersystems.signalservice.internal.storage.protos.AccountRecord
@@ -357,25 +360,32 @@ class RecipientTableTest {
 
   @Test
   fun givenPermanentlyTakenStorageKey_whenInsertingRecipient_thenFailsLoudlyInsteadOfLoopingForever() {
-    every { RemoteConfig.internalUser } returns false
-
-    val takenKey: ByteArray = Util.getSecretBytes(16)
-
-    StorageSyncHelper.setTestKeyGenerator(ScriptedKeyGenerator(takenKey))
+    // The exhaustion path also files an internal issue report, which drags the
+    // RemoteConfig/SignalStore machinery in. Silence only the reporter here;
+    // this test asserts the bounded-loud behavior, not the telemetry.
+    mockkObject(IssueReporter)
+    every { IssueReporter.report(any(), any(), any(), any(), any(), any()) } just Runs
     try {
-      SignalDatabase.recipients.getOrInsertFromDistributionListId(DistributionListId.from(201L))
-    } finally {
-      StorageSyncHelper.setTestKeyGenerator(null)
-    }
+      val takenKey: ByteArray = Util.getSecretBytes(16)
 
-    StorageSyncHelper.setTestKeyGenerator(StorageKeyGenerator { takenKey })
-    try {
-      SignalDatabase.recipients.getOrInsertFromDistributionListId(DistributionListId.from(202L))
-      fail("Expected bounded retries to exhaust loudly rather than spin forever")
-    } catch (e: AssertionError) {
-      // expected: retries are bounded, total failure is loud so crash reporting flags a broken generator
+      StorageSyncHelper.setTestKeyGenerator(ScriptedKeyGenerator(takenKey))
+      try {
+        SignalDatabase.recipients.getOrInsertFromDistributionListId(DistributionListId.from(201L))
+      } finally {
+        StorageSyncHelper.setTestKeyGenerator(null)
+      }
+
+      StorageSyncHelper.setTestKeyGenerator(StorageKeyGenerator { takenKey })
+      try {
+        SignalDatabase.recipients.getOrInsertFromDistributionListId(DistributionListId.from(202L))
+        fail("Expected bounded retries to exhaust loudly rather than spin forever")
+      } catch (e: AssertionError) {
+        // expected: retries are bounded, total failure is loud so crash reporting flags a broken generator
+      } finally {
+        StorageSyncHelper.setTestKeyGenerator(null)
+      }
     } finally {
-      StorageSyncHelper.setTestKeyGenerator(null)
+      unmockkObject(IssueReporter)
     }
   }
 
