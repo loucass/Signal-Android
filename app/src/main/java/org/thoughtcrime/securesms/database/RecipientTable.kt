@@ -1139,20 +1139,40 @@ open class RecipientTable(context: Context, databaseHelper: SignalDatabase) : Da
 
     writableDatabase.beginTransaction()
     try {
-      // Resolve collision: if another recipient already has the target storage ID,
-      // give them a new unique ID before we claim it for ourselves.
+      // Free the target ID first. NULL never violates the UNIQUE constraint,
+      // so the self update below cannot fail with 2067 no matter who holds the target ID.
       val targetKeyBytes = try { Base64.decode(targetStorageIdStr) } catch (e: Exception) { null }
       val conflictingRecord = targetKeyBytes?.let { getByStorageId(it) }
-      if (conflictingRecord != null && conflictingRecord.id != Recipient.self().id) {
-        val newKeyForConflicting = StorageSyncHelper.generateUniqueStorageId()
-        val newKeyForConflictingStr = Base64.encodeWithPadding(newKeyForConflicting)
-        writableDatabase.update(TABLE_NAME, contentValuesOf(STORAGE_SERVICE_ID to newKeyForConflictingStr), "$ID = ?", arrayOf(conflictingRecord.id.toLong()))
-        Log.w(TAG, "Resolved storage_service_id collision: recipient ${conflictingRecord.id} had $targetStorageIdStr, reassigned to $newKeyForConflictingStr")
+      val squatter = if (conflictingRecord != null && conflictingRecord.id != Recipient.self().id) conflictingRecord else null
+      if (squatter != null) {
+        val nullOut = ContentValues().apply { putNull(STORAGE_SERVICE_ID) }
+        writableDatabase.update(TABLE_NAME, nullOut, "$ID = ?", arrayOf(squatter.id.toLong()))
+        Log.w(TAG, "Freed storage_service_id $targetStorageIdStr held by recipient ${squatter.id} for account update.")
       }
 
       val updateCount = writableDatabase.update(TABLE_NAME, values, "$STORAGE_SERVICE_ID = ?", arrayOf(oldStorageIdStr))
       if (updateCount < 1) {
         throw AssertionError("Account update didn't match any rows!")
+      }
+
+      // Re-home the squatter with a checked direct update. On exhaustion the row
+      // stays NULL and the next storage sync repairs it (group/self/contact healers).
+      if (squatter != null) {
+        var rehomed = false
+        for (attempt in 1..5) {
+          val candidate = StorageSyncHelper.generateKey()
+          if (getByStorageId(candidate) != null) {
+            Log.w(TAG, ImportSkips.duplicateStorageId(Base64.encodeWithPadding(candidate)) + " re-home pre-check hit, retry $attempt/5 for recipient ${squatter.id}")
+            continue
+          }
+          writableDatabase.update(TABLE_NAME, contentValuesOf(STORAGE_SERVICE_ID to Base64.encodeWithPadding(candidate)), "$ID = ?", arrayOf(squatter.id.toLong()))
+          Log.w(TAG, "Resolved storage_service_id collision: recipient ${squatter.id} held $targetStorageIdStr, reassigned.")
+          rehomed = true
+          break
+        }
+        if (!rehomed) {
+          Log.w(TAG, "Could not re-home recipient ${squatter.id} after 5 attempts; leaving storage_service_id NULL for storage sync repair.")
+        }
       }
 
       writableDatabase.setTransactionSuccessful()
