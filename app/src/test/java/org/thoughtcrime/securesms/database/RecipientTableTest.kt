@@ -9,6 +9,7 @@ import android.app.Application
 import assertk.assertThat
 import assertk.assertions.isEmpty
 import assertk.assertions.isNotEmpty
+import io.mockk.every
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -35,6 +36,7 @@ import org.thoughtcrime.securesms.storage.StorageKeyGenerator
 import org.thoughtcrime.securesms.storage.StorageRecordUpdate
 import org.thoughtcrime.securesms.storage.StorageSyncHelper
 import org.thoughtcrime.securesms.testutil.RecipientTestRule
+import org.thoughtcrime.securesms.util.RemoteConfig
 import org.whispersystems.signalservice.api.storage.SignalAccountRecord
 import org.whispersystems.signalservice.api.storage.StorageId
 import org.whispersystems.signalservice.internal.storage.protos.AccountRecord
@@ -355,6 +357,8 @@ class RecipientTableTest {
 
   @Test
   fun givenPermanentlyTakenStorageKey_whenInsertingRecipient_thenFailsLoudlyInsteadOfLoopingForever() {
+    every { RemoteConfig.internalUser } returns false
+
     val takenKey: ByteArray = Util.getSecretBytes(16)
 
     StorageSyncHelper.setTestKeyGenerator(ScriptedKeyGenerator(takenKey))

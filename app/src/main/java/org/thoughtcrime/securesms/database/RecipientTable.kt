@@ -68,6 +68,7 @@ import org.thoughtcrime.securesms.database.SignalDatabase.Companion.runPostSucce
 import org.thoughtcrime.securesms.database.SignalDatabase.Companion.sessions
 import org.thoughtcrime.securesms.database.SignalDatabase.Companion.threads
 import org.thoughtcrime.securesms.database.model.DistributionListId
+import org.thoughtcrime.securesms.database.model.IssuePriority
 import org.thoughtcrime.securesms.database.model.KeyTransparencyStore
 import org.thoughtcrime.securesms.database.model.RecipientRecord
 import org.thoughtcrime.securesms.database.model.ThreadWithRecipient
@@ -1171,6 +1172,7 @@ open class RecipientTable(context: Context, databaseHelper: SignalDatabase) : Da
         }
         if (!rehomed) {
           Log.w(TAG, "Could not re-home recipient ${squatter.id} after 5 attempts; leaving storage_service_id NULL for storage sync repair.")
+          IssueReporter.report(ISSUE_STORAGE_ID_COLLISION_EXHAUSTED, "recipient=${squatter.id}", priority = IssuePriority.HIGH)
         }
       }
 
@@ -4370,7 +4372,14 @@ open class RecipientTable(context: Context, databaseHelper: SignalDatabase) : Da
       var attempts = 0
       var mutableValues = ContentValues(contentValues)
       while (attempts < 5) {
-        val id = writableDatabase.insert(TABLE_NAME, null, mutableValues)
+        // Some database wrappers throw on constraint violation instead of returning -1.
+        // Treat a thrown duplicate exactly like a failed insert; anything else stays loud below.
+        val id = try {
+          writableDatabase.insert(TABLE_NAME, null, mutableValues)
+        } catch (e: SQLiteConstraintException) {
+          Log.w(TAG, "Insert threw for $column=$value, treating as failed insert: ${e.message}")
+          -1L
+        }
         if (id >= 0) {
           return GetOrInsertResult(RecipientId.from(id), true)
         }
@@ -4403,6 +4412,7 @@ open class RecipientTable(context: Context, databaseHelper: SignalDatabase) : Da
       if (existing.isPresent) {
         return GetOrInsertResult(existing.get(), false)
       }
+      IssueReporter.report(ISSUE_STORAGE_ID_COLLISION_EXHAUSTED, "column=$column attempts=$attempts", priority = IssuePriority.HIGH)
       throw AssertionError("Failed to insert recipient after $attempts retries due to storage_service_id collisions!")
     }
   }

@@ -6,6 +6,7 @@
 package org.thoughtcrime.securesms.backup.v2.importer
 
 import android.content.ContentValues
+import android.database.sqlite.SQLiteConstraintException
 import org.signal.archive.proto.Group
 import org.signal.core.models.ServiceId
 import org.signal.core.util.Base64
@@ -83,7 +84,14 @@ object GroupArchiveImporter {
         }
       }
 
-      recipientId = SignalDatabase.writableDatabase.insert(RecipientTable.TABLE_NAME, null, values)
+      // Some database wrappers throw on constraint violation instead of returning -1.
+      // Treat a thrown duplicate exactly like a failed insert.
+      recipientId = try {
+        SignalDatabase.writableDatabase.insert(RecipientTable.TABLE_NAME, null, values)
+      } catch (e: SQLiteConstraintException) {
+        Log.w(TAG, "Insert threw for group $groupId, treating as failed insert: ${e.message}")
+        -1L
+      }
       if (recipientId != -1L) {
         break
       }
