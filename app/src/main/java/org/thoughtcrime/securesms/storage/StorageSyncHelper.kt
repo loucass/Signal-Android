@@ -120,8 +120,7 @@ object StorageSyncHelper {
     repeat(5) {
       val key = generateKey()
       if (SignalDatabase.recipients.getByStorageId(key) == null) return key
-      val encoded = encodeWithPadding(key)
-      Log.w(TAG, "Duplicate storage_service_id::$encoded found in pre-check, retry ${it + 1}/5")
+      Log.w(TAG, "Duplicate storage_service_id found in pre-check, retry ${it + 1}/5")
     }
     Log.w(TAG, "generateUniqueStorageId: all 5 pre-check retries exhausted, returning unverified key. Caller must handle insert collision.")
     return generateKey()

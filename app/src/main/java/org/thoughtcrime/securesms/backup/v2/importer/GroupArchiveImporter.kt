@@ -105,10 +105,10 @@ object GroupArchiveImporter {
           Log.w(TAG, "Insert failed for group $groupId - group already exists as ${existingByGroup.get()}, reusing.")
           return existingByGroup.get()
         }
-        Log.w(TAG, "Insert failed for group $groupId, storage ${lastStorageKey ?: "unknown"} not found - not a storage collision, skipping")
+        Log.w(TAG, "Insert failed for group $groupId, storage key not found - not a storage collision, skipping")
         break
       }
-      Log.w(TAG, ImportSkips.duplicateStorageId(lastStorageKey ?: "unknown") + " attempt ${attempts + 1}/5 for group $groupId")
+      Log.w(TAG, ImportSkips.duplicateStorageId() + " attempt ${attempts + 1}/5 for group $groupId")
       attempts++
       if (attempts >= 5) {
         break

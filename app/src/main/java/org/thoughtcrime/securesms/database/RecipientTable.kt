@@ -1147,7 +1147,7 @@ open class RecipientTable(context: Context, databaseHelper: SignalDatabase) : Da
       if (squatter != null) {
         val nullOut = ContentValues().apply { putNull(STORAGE_SERVICE_ID) }
         writableDatabase.update(TABLE_NAME, nullOut, "$ID = ?", arrayOf(squatter.id.serialize()))
-        Log.w(TAG, "Freed storage_service_id $targetStorageIdStr held by recipient ${squatter.id} for account update.")
+        Log.w(TAG, "Freed conflicting storage_service_id held by recipient ${squatter.id} for account update.")
       }
 
       val updateCount = writableDatabase.update(TABLE_NAME, values, "$STORAGE_SERVICE_ID = ?", arrayOf(oldStorageIdStr))
@@ -1162,11 +1162,11 @@ open class RecipientTable(context: Context, databaseHelper: SignalDatabase) : Da
         for (attempt in 1..5) {
           val candidate = StorageSyncHelper.generateKey()
           if (getByStorageId(candidate) != null) {
-            Log.w(TAG, duplicateStorageIdMessage(Base64.encodeWithPadding(candidate)) + " re-home pre-check hit, retry $attempt/5 for recipient ${squatter.id}")
+            Log.w(TAG, duplicateStorageIdMessage() + " re-home pre-check hit, retry $attempt/5 for recipient ${squatter.id}")
             continue
           }
           writableDatabase.update(TABLE_NAME, contentValuesOf(STORAGE_SERVICE_ID to Base64.encodeWithPadding(candidate)), "$ID = ?", arrayOf(squatter.id.serialize()))
-          Log.w(TAG, "Resolved storage_service_id collision: recipient ${squatter.id} held $targetStorageIdStr, reassigned.")
+          Log.w(TAG, "Resolved storage_service_id collision: recipient ${squatter.id} re-homed.")
           rehomed = true
           break
         }
@@ -4355,8 +4355,8 @@ open class RecipientTable(context: Context, databaseHelper: SignalDatabase) : Da
     }
   }
 
-  private fun duplicateStorageIdMessage(storageId: String): String {
-    return "Duplicate storage_service_id::$storageId encountered, retrying with new key."
+  private fun duplicateStorageIdMessage(): String {
+    return "Duplicate storage_service_id encountered, retrying with new key."
   }
 
   private fun getOrInsertByColumn(column: String, value: String, contentValues: ContentValues = contentValuesOf(column to value)): GetOrInsertResult {
@@ -4400,7 +4400,7 @@ open class RecipientTable(context: Context, databaseHelper: SignalDatabase) : Da
           val newKey = StorageSyncHelper.generateUniqueStorageId()
           val newKeyStr = Base64.encodeWithPadding(newKey)
           mutableValues.put(STORAGE_SERVICE_ID, newKeyStr)
-          Log.w(TAG, duplicateStorageIdMessage(lastKeyStr) + " attempt ${attempts + 1}/5 for $column=$value -> retry with $newKeyStr")
+          Log.w(TAG, duplicateStorageIdMessage() + " attempt ${attempts + 1}/5 for $column=$value -> retrying")
           attempts++
           continue
         } else {
