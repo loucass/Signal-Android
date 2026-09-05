@@ -67,7 +67,7 @@ object GroupArchiveImporter {
     var attempts = 0
     var recipientId: Long = -1
     var lastStorageKey: String? = null
-    while (attempts < 5) {
+    while (attempts < StorageSyncHelper.MAX_STORAGE_ID_ATTEMPTS) {
       val values = ContentValues().apply {
         put(RecipientTable.GROUP_ID, groupId.toString())
         put(RecipientTable.PROFILE_SHARING, group.whitelisted.toInt())
@@ -108,9 +108,9 @@ object GroupArchiveImporter {
         Log.w(TAG, "Insert failed for group $groupId, storage key not found - not a storage collision, skipping")
         break
       }
-      Log.w(TAG, ImportSkips.duplicateStorageId() + " attempt ${attempts + 1}/5 for group $groupId")
+      Log.w(TAG, ImportSkips.duplicateStorageId() + " attempt ${attempts + 1}/${StorageSyncHelper.MAX_STORAGE_ID_ATTEMPTS} for group $groupId")
       attempts++
-      if (attempts >= 5) {
+      if (attempts >= StorageSyncHelper.MAX_STORAGE_ID_ATTEMPTS) {
         break
       }
     }

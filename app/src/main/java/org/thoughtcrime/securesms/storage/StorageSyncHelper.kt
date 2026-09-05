@@ -55,6 +55,12 @@ object StorageSyncHelper {
 
   val KEY_GENERATOR: StorageKeyGenerator = StorageKeyGenerator { Util.getSecretBytes(16) }
 
+  /**
+   * How many times callers retry with a fresh storage key after a UNIQUE 2067 collision
+   * before giving up. Shared so the policy stays consistent across all insert paths.
+   */
+  const val MAX_STORAGE_ID_ATTEMPTS = 5
+
   private var keyGenerator = KEY_GENERATOR
 
   private val REFRESH_INTERVAL = TimeUnit.HOURS.toMillis(2)
@@ -117,12 +123,12 @@ object StorageSyncHelper {
    */
   @JvmStatic
   fun generateUniqueStorageId(): ByteArray {
-    repeat(5) {
+    repeat(MAX_STORAGE_ID_ATTEMPTS) {
       val key = generateKey()
       if (SignalDatabase.recipients.getByStorageId(key) == null) return key
-      Log.w(TAG, "Duplicate storage_service_id found in pre-check, retry ${it + 1}/5")
+      Log.w(TAG, "Duplicate storage_service_id found in pre-check, retry ${it + 1}/$MAX_STORAGE_ID_ATTEMPTS")
     }
-    Log.w(TAG, "generateUniqueStorageId: all 5 pre-check retries exhausted, returning unverified key. Caller must handle insert collision.")
+    Log.w(TAG, "generateUniqueStorageId: all $MAX_STORAGE_ID_ATTEMPTS pre-check retries exhausted, returning unverified key. Caller must handle insert collision.")
     return generateKey()
   }
 

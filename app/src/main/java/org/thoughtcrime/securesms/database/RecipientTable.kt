@@ -1159,10 +1159,10 @@ open class RecipientTable(context: Context, databaseHelper: SignalDatabase) : Da
       // stays NULL and the next storage sync repairs it (group/self/contact healers).
       if (squatter != null) {
         var rehomed = false
-        for (attempt in 1..5) {
+        for (attempt in 1..StorageSyncHelper.MAX_STORAGE_ID_ATTEMPTS) {
           val candidate = StorageSyncHelper.generateKey()
           if (getByStorageId(candidate) != null) {
-            Log.w(TAG, duplicateStorageIdMessage() + " re-home pre-check hit, retry $attempt/5 for recipient ${squatter.id}")
+            Log.w(TAG, duplicateStorageIdMessage() + " re-home pre-check hit, retry $attempt/${StorageSyncHelper.MAX_STORAGE_ID_ATTEMPTS} for recipient ${squatter.id}")
             continue
           }
           writableDatabase.update(TABLE_NAME, contentValuesOf(STORAGE_SERVICE_ID to Base64.encodeWithPadding(candidate)), "$ID = ?", arrayOf(squatter.id.serialize()))
@@ -4371,7 +4371,7 @@ open class RecipientTable(context: Context, databaseHelper: SignalDatabase) : Da
     } else {
       var attempts = 0
       var mutableValues = ContentValues(contentValues)
-      while (attempts < 5) {
+      while (attempts < StorageSyncHelper.MAX_STORAGE_ID_ATTEMPTS) {
         // Some database wrappers throw on constraint violation instead of returning -1.
         // Treat a thrown duplicate exactly like a failed insert; anything else stays loud below.
         val id = try {
@@ -4400,7 +4400,7 @@ open class RecipientTable(context: Context, databaseHelper: SignalDatabase) : Da
           val newKey = StorageSyncHelper.generateUniqueStorageId()
           val newKeyStr = Base64.encodeWithPadding(newKey)
           mutableValues.put(STORAGE_SERVICE_ID, newKeyStr)
-          Log.w(TAG, duplicateStorageIdMessage() + " attempt ${attempts + 1}/5 for $column=$value -> retrying")
+          Log.w(TAG, duplicateStorageIdMessage() + " attempt ${attempts + 1}/${StorageSyncHelper.MAX_STORAGE_ID_ATTEMPTS} for $column=$value -> retrying")
           attempts++
           continue
         } else {
