@@ -95,7 +95,6 @@ import org.thoughtcrime.securesms.recipients.RecipientId
 import org.thoughtcrime.securesms.recipients.RecipientUtil
 import org.thoughtcrime.securesms.service.webrtc.links.CallLinkRoomId
 import org.thoughtcrime.securesms.storage.StorageRecordUpdate
-import org.thoughtcrime.securesms.backup.v2.ImportSkips
 import org.thoughtcrime.securesms.storage.StorageSyncHelper
 import org.thoughtcrime.securesms.storage.StorageSyncModels
 import org.thoughtcrime.securesms.util.IdentityUtil
@@ -1162,7 +1161,7 @@ open class RecipientTable(context: Context, databaseHelper: SignalDatabase) : Da
         for (attempt in 1..5) {
           val candidate = StorageSyncHelper.generateKey()
           if (getByStorageId(candidate) != null) {
-            Log.w(TAG, ImportSkips.duplicateStorageId(Base64.encodeWithPadding(candidate)) + " re-home pre-check hit, retry $attempt/5 for recipient ${squatter.id}")
+            Log.w(TAG, duplicateStorageIdMessage(Base64.encodeWithPadding(candidate)) + " re-home pre-check hit, retry $attempt/5 for recipient ${squatter.id}")
             continue
           }
           writableDatabase.update(TABLE_NAME, contentValuesOf(STORAGE_SERVICE_ID to Base64.encodeWithPadding(candidate)), "$ID = ?", arrayOf(squatter.id.toLong()))
@@ -4354,6 +4353,10 @@ open class RecipientTable(context: Context, databaseHelper: SignalDatabase) : Da
     }
   }
 
+  private fun duplicateStorageIdMessage(storageId: String): String {
+    return "Duplicate storage_service_id::$storageId encountered, retrying with new key."
+  }
+
   private fun getOrInsertByColumn(column: String, value: String, contentValues: ContentValues = contentValuesOf(column to value)): GetOrInsertResult {
     if (TextUtils.isEmpty(value)) {
       throw AssertionError("$column cannot be empty.")
@@ -4388,12 +4391,17 @@ open class RecipientTable(context: Context, databaseHelper: SignalDatabase) : Da
           val newKey = StorageSyncHelper.generateUniqueStorageId()
           val newKeyStr = Base64.encodeWithPadding(newKey)
           mutableValues.put(STORAGE_SERVICE_ID, newKeyStr)
-          Log.w(TAG, ImportSkips.duplicateStorageId(lastKeyStr) + " attempt ${attempts + 1}/5 for $column=$value -> retry with $newKeyStr")
+          Log.w(TAG, duplicateStorageIdMessage(lastKeyStr) + " attempt ${attempts + 1}/5 for $column=$value -> retry with $newKeyStr")
           attempts++
           continue
         } else {
           throw AssertionError("Failed to insert recipient!")
         }
+      }
+      // Last resort re-check: a concurrent writer may have won the race while we retried.
+      existing = getByColumn(column, value)
+      if (existing.isPresent) {
+        return GetOrInsertResult(existing.get(), false)
       }
       throw AssertionError("Failed to insert recipient after $attempts retries due to storage_service_id collisions!")
     }
