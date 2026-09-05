@@ -56,6 +56,13 @@ object GroupArchiveImporter {
       snapshot.toLocal(operations)
     }
 
+    // Idempotent restore: the group may already exist (transfer + restore overlap).
+    val preExisting = SignalDatabase.recipients.getByGroupId(groupId)
+    if (preExisting.isPresent) {
+      Log.i(TAG, "Group $groupId already exists as ${preExisting.get()}, reusing.")
+      return preExisting.get()
+    }
+
     var attempts = 0
     var recipientId: Long = -1
     var lastStorageKey: String? = null
@@ -85,6 +92,11 @@ object GroupArchiveImporter {
       val lastKeyBytes = try { lastStorageKey?.let { Base64.decode(it) } } catch (e: Exception) { null }
       val storageExists = lastKeyBytes != null && SignalDatabase.recipients.getByStorageId(lastKeyBytes) != null
       if (!storageExists) {
+        val existingByGroup = SignalDatabase.recipients.getByGroupId(groupId)
+        if (existingByGroup.isPresent) {
+          Log.w(TAG, "Insert failed for group $groupId - group already exists as ${existingByGroup.get()}, reusing.")
+          return existingByGroup.get()
+        }
         Log.w(TAG, "Insert failed for group $groupId, storage ${lastStorageKey ?: "unknown"} not found - not a storage collision, skipping")
         break
       }
