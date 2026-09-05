@@ -1172,7 +1172,7 @@ open class RecipientTable(context: Context, databaseHelper: SignalDatabase) : Da
         }
         if (!rehomed) {
           Log.w(TAG, "Could not re-home recipient ${squatter.id} after 5 attempts; leaving storage_service_id NULL for storage sync repair.")
-          IssueReporter.report(ISSUE_STORAGE_ID_COLLISION_EXHAUSTED, "recipient=${squatter.id}", priority = IssuePriority.HIGH)
+          IssueReporter.report(IssueReporter.ISSUE_STORAGE_ID_COLLISION_EXHAUSTED, "recipient=${squatter.id}", priority = IssuePriority.HIGH)
         }
       }
 
@@ -4412,7 +4412,7 @@ open class RecipientTable(context: Context, databaseHelper: SignalDatabase) : Da
       if (existing.isPresent) {
         return GetOrInsertResult(existing.get(), false)
       }
-      IssueReporter.report(ISSUE_STORAGE_ID_COLLISION_EXHAUSTED, "column=$column attempts=$attempts", priority = IssuePriority.HIGH)
+      IssueReporter.report(IssueReporter.ISSUE_STORAGE_ID_COLLISION_EXHAUSTED, "column=$column attempts=$attempts", priority = IssuePriority.HIGH)
       throw AssertionError("Failed to insert recipient after $attempts retries due to storage_service_id collisions!")
     }
   }
