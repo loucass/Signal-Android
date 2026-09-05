@@ -1145,7 +1145,7 @@ open class RecipientTable(context: Context, databaseHelper: SignalDatabase) : Da
       val squatter = if (conflictingRecord != null && conflictingRecord.id != Recipient.self().id) conflictingRecord else null
       if (squatter != null) {
         val nullOut = ContentValues().apply { putNull(STORAGE_SERVICE_ID) }
-        writableDatabase.update(TABLE_NAME, nullOut, "$ID = ?", arrayOf(squatter.id.toLong()))
+        writableDatabase.update(TABLE_NAME, nullOut, "$ID = ?", arrayOf(squatter.id.serialize()))
         Log.w(TAG, "Freed storage_service_id $targetStorageIdStr held by recipient ${squatter.id} for account update.")
       }
 
@@ -1164,7 +1164,7 @@ open class RecipientTable(context: Context, databaseHelper: SignalDatabase) : Da
             Log.w(TAG, duplicateStorageIdMessage(Base64.encodeWithPadding(candidate)) + " re-home pre-check hit, retry $attempt/5 for recipient ${squatter.id}")
             continue
           }
-          writableDatabase.update(TABLE_NAME, contentValuesOf(STORAGE_SERVICE_ID to Base64.encodeWithPadding(candidate)), "$ID = ?", arrayOf(squatter.id.toLong()))
+          writableDatabase.update(TABLE_NAME, contentValuesOf(STORAGE_SERVICE_ID to Base64.encodeWithPadding(candidate)), "$ID = ?", arrayOf(squatter.id.serialize()))
           Log.w(TAG, "Resolved storage_service_id collision: recipient ${squatter.id} held $targetStorageIdStr, reassigned.")
           rehomed = true
           break
